@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, Film, Loader2, X, Plus, Check, Eye, Sparkles } from "lucide-react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import type { Movie, MovieDetails } from "./api";
