@@ -5,6 +5,8 @@ import type { Movie } from './api';
 interface LibraryState {
   watchlist: Movie[];
   seenList: Movie[];
+  geminiApiKey: string | null;
+  setGeminiApiKey: (key: string | null) => void;
   addToWatchlist: (movie: Movie) => void;
   removeFromWatchlist: (id: number) => void;
   markAsSeen: (movie: Movie) => void;
@@ -18,12 +20,14 @@ export const useLibraryStore = create<LibraryState>()(
     (set, get) => ({
       watchlist: [],
       seenList: [],
+      geminiApiKey: null,
+      setGeminiApiKey: (key) => set({ geminiApiKey: key }),
       addToWatchlist: (movie) =>
         set((state) => {
           if (state.watchlist.find((m) => m.id === movie.id)) return state;
           return {
             watchlist: [movie, ...state.watchlist],
-            seenList: state.seenList.filter((m) => m.id !== movie.id), // remove from seen if re-adding to watch
+            seenList: state.seenList.filter((m) => m.id !== movie.id),
           };
         }),
       removeFromWatchlist: (id) =>
@@ -35,7 +39,7 @@ export const useLibraryStore = create<LibraryState>()(
           if (state.seenList.find((m) => m.id === movie.id)) return state;
           return {
             seenList: [movie, ...state.seenList],
-            watchlist: state.watchlist.filter((m) => m.id !== movie.id), // remove from watchlist if seen
+            watchlist: state.watchlist.filter((m) => m.id !== movie.id),
           };
         }),
       removeFromSeen: (id) =>
@@ -46,7 +50,7 @@ export const useLibraryStore = create<LibraryState>()(
       hasSeen: (id) => !!get().seenList.find((m) => m.id === id),
     }),
     {
-      name: 'cinemind-library', // name of the item in the storage (must be unique)
+      name: 'cinemind-library',
     }
   )
 );

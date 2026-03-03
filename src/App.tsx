@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Search, Film, Loader2, X, Plus, Check, Eye, Sparkles } from "lucide-react";
+import { Search, Film, Loader2, X, Plus, Check, Eye, Sparkles, Key, LogOut } from "lucide-react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import type { Movie, MovieDetails } from "./api";
-import { getTrendingMovies, searchMoviesSemantic, getMovieDetails } from "./api";
+import { getTrendingMovies, searchMoviesSemantic, getMovieDetails, generateMoodsAI } from "./api";
 import { useLibraryStore } from "./store";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import "./App.css";
-
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const DEFAULT_MOODS = [
   "🍿 Popcorn Fun",
@@ -19,6 +14,61 @@ const DEFAULT_MOODS = [
   "🌌 Epic Space",
   "🕵️‍♂️ Noir Mystery",
 ];
+
+const ApiKeyOverlay = () => {
+  const [key, setKey] = useState("");
+  const { setGeminiApiKey } = useLibraryStore();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (key.trim().startsWith("AIza")) {
+      setGeminiApiKey(key.trim());
+    } else {
+      alert("Please enter a valid Google Gemini API Key (starts with AIza)");
+    }
+  };
+
+  return (
+    <motion.div 
+      className="modal-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{ zIndex: 1000 }}
+    >
+      <motion.div 
+        className="modal-content"
+        style={{ maxWidth: '400px', padding: '2.5rem', textAlign: 'center' }}
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+      >
+        <div style={{ marginBottom: '1.5rem', color: 'var(--accent-color)' }}>
+          <Key size={48} />
+        </div>
+        <h2 style={{ marginBottom: '1rem' }}>Enter Gemini API Key</h2>
+        <p style={{ opacity: 0.7, fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+          To use CineMind's AI features, please provide your Google Gemini API Key. 
+          It's stored locally on your device.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <input 
+            type="password"
+            placeholder="AIza..."
+            className="search-input"
+            style={{ marginBottom: '1rem', borderRadius: '12px' }}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
+            Get Started
+          </button>
+        </form>
+        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', opacity: 0.5 }}>
+          Don't have one? Get it from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)' }}>Google AI Studio</a>.
+        </p>
+      </motion.div>
+    </motion.div>
+  );
+};
 
 const MovieModal = ({ movieId, onClose }: { movieId: number; onClose: () => void }) => {
   const [details, setDetails] = useState<MovieDetails | null>(null);
@@ -250,47 +300,30 @@ function App() {
   const [moods, setMoods] = useState<string[]>(DEFAULT_MOODS);
   const [isGeneratingMoods, setIsGeneratingMoods] = useState(false);
 
-  const { watchlist, seenList } = useLibraryStore();
+  const { watchlist, seenList, geminiApiKey, setGeminiApiKey } = useLibraryStore();
 
   useEffect(() => {
-    generateDynamicMoods();
+    if (geminiApiKey) {
+      generateDynamicMoods();
+    }
     if (activeTab === 'discover' && query === "") {
       loadTrending();
     }
-  }, []);
+  }, [geminiApiKey]);
 
-  // Regenerate moods when seenList or watchlist changes significantly (e.g., every 3 additions)
   useEffect(() => {
-    if (seenList.length > 0 || watchlist.length > 0) {
+    if (geminiApiKey && (seenList.length > 0 || watchlist.length > 0)) {
       generateDynamicMoods();
     }
   }, [seenList.length, watchlist.length]);
 
   const generateDynamicMoods = async () => {
+    if (!geminiApiKey) return;
     setIsGeneratingMoods(true);
-    try {
-      const history = [...seenList, ...watchlist].map(m => m.title).join(", ");
-      const prompt = `You are a cinematic curator. Generate a list of 6 short, exciting movie "mood" or "theme" chips for a search interface. 
-      ${history ? `The user likes these movies: ${history}. Create 3 chips that are highly personalized based on their taste (e.g., "More like [Title]" or a sub-genre they'd love) and 3 chips that are broad/exploratory but unique.` : `Generate 6 unique and exciting movie theme chips for a general user.`}
-      
-      Requirements:
-      - Include one relevant emoji per chip.
-      - Each chip must be under 20 characters.
-      - Return ONLY a JSON array of strings.
-      Example: ["🌌 Epic Sci-Fi", "🕵️ Noir Vibes", "🩸 Slasher Fun"]`;
-
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const generatedMoods: string[] = JSON.parse(text.match(/\[.*\]/s)?.[0] || "[]");
-      
-      if (generatedMoods.length > 0) {
-        setMoods(generatedMoods);
-      }
-    } catch (error) {
-      console.error("Mood generation failed:", error);
-    } finally {
-      setIsGeneratingMoods(false);
-    }
+    const historyTitles = [...seenList, ...watchlist].map(m => m.title);
+    const generatedMoods = await generateMoodsAI(geminiApiKey, historyTitles);
+    if (generatedMoods.length > 0) setMoods(generatedMoods);
+    setIsGeneratingMoods(false);
   };
 
   const loadTrending = async () => {
@@ -303,7 +336,7 @@ function App() {
   const handleSearch = async (e?: React.FormEvent, presetQuery?: string) => {
     if (e) e.preventDefault();
     const q = presetQuery || query;
-    if (!q.trim()) return;
+    if (!q.trim() || !geminiApiKey) return;
 
     if (presetQuery) setQuery(presetQuery);
 
@@ -312,7 +345,7 @@ function App() {
     setIsLoading(true);
     
     const seenTitles = seenList.map(m => m.title);
-    const results = await searchMoviesSemantic(q, seenTitles);
+    const results = await searchMoviesSemantic(q, geminiApiKey, seenTitles);
     
     setMovies(results);
     setIsLoading(false);
@@ -327,7 +360,24 @@ function App() {
 
   return (
     <div className="app-container">
+      <AnimatePresence>
+        {!geminiApiKey && <ApiKeyOverlay key="api-overlay" />}
+      </AnimatePresence>
+
       <header>
+        <div style={{ position: 'absolute', top: '1rem', right: '1rem' }}>
+          {geminiApiKey && (
+            <button 
+              className="btn btn-secondary" 
+              style={{ padding: '0.5rem', borderRadius: '50%' }}
+              onClick={() => { if(confirm("Remove API Key?")) setGeminiApiKey(null); }}
+              title="Logout / Change API Key"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
+        </div>
+
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -355,9 +405,10 @@ function App() {
               <input
                 type="text"
                 className="search-input"
-                placeholder="Search films like 'Inception' or 'Epic space adventures'..."
+                placeholder={geminiApiKey ? "Search films like 'Inception'..." : "Please enter your API key above"}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                disabled={!geminiApiKey}
               />
               <div className="search-icon" onClick={() => handleSearch()}>
                 {isSearching ? <Loader2 className="animate-spin" /> : <Search />}
@@ -379,6 +430,7 @@ function App() {
                     exit={{ scale: 0.8, opacity: 0 }}
                     transition={{ delay: i * 0.05 }}
                     onClick={() => handleSearch(undefined, mood)}
+                    disabled={!geminiApiKey}
                   >
                     {mood}
                   </motion.button>
@@ -388,7 +440,7 @@ function App() {
                 className="mood-chip" 
                 style={{ borderStyle: 'dashed', opacity: 0.5 }}
                 onClick={generateDynamicMoods}
-                disabled={isGeneratingMoods}
+                disabled={isGeneratingMoods || !geminiApiKey}
               >
                 {isGeneratingMoods ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />}
               </button>

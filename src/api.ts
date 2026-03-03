@@ -1,10 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 export interface Movie {
   id: number;
@@ -39,8 +35,14 @@ export interface MovieDetails extends Movie {
   similar: { results: Movie[] };
 }
 
-export const searchMoviesSemantic = async (query: string, seenMovieTitles: string[] = []): Promise<Movie[]> => {
+const getGeminiModel = (apiKey: string) => {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+};
+
+export const searchMoviesSemantic = async (query: string, apiKey: string, seenMovieTitles: string[] = []): Promise<Movie[]> => {
   try {
+    const model = getGeminiModel(apiKey);
     let contextStr = "";
     if (seenMovieTitles.length > 0) {
       contextStr = `\nThe user has already seen these movies and liked them. Try to recommend NEW movies similar to these but matching their query, OR avoid these if they are looking for something completely different. DO NOT recommend any movies in this "seen" list: ${seenMovieTitles.slice(0, 30).join(", ")}.`;
@@ -60,14 +62,35 @@ export const searchMoviesSemantic = async (query: string, seenMovieTitles: strin
         `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}`
       );
       const data = await response.json();
-      // Ensure exact or very close title matches if multiple results
       return data.results?.[0] as Movie | undefined;
     });
 
     const movies = await Promise.all(moviePromises);
-    return movies.filter((m): m is Movie => !!m); // Filter out undefined and type assert
+    return movies.filter((m): m is Movie => !!m);
   } catch (error) {
     console.error("Semantic search failed:", error);
+    return [];
+  }
+};
+
+export const generateMoodsAI = async (apiKey: string, historyTitles: string[] = []): Promise<string[]> => {
+  try {
+    const model = getGeminiModel(apiKey);
+    const history = historyTitles.join(", ");
+    const prompt = `You are a cinematic curator. Generate a list of 6 short, exciting movie "mood" or "theme" chips for a search interface. 
+    ${history ? `The user likes these movies: ${history}. Create 3 chips that are highly personalized based on their taste (e.g., "More like [Title]" or a sub-genre they'd love) and 3 chips that are broad/exploratory but unique.` : `Generate 6 unique and exciting movie theme chips for a general user.`}
+    
+    Requirements:
+    - Include one relevant emoji per chip.
+    - Each chip must be under 20 characters.
+    - Return ONLY a JSON array of strings.
+    Example: ["🌌 Epic Sci-Fi", "🕵️ Noir Vibes", "🩸 Slasher Fun"]`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    return JSON.parse(text.match(/\[.*\]/s)?.[0] || "[]");
+  } catch (error) {
+    console.error("Mood generation failed:", error);
     return [];
   }
 };
