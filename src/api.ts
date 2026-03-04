@@ -73,6 +73,39 @@ export const searchMoviesSemantic = async (query: string, apiKey: string, seenMo
   }
 };
 
+export const getDiscoveryMovies = async (apiKey: string, historyTitles: string[] = []): Promise<Movie[]> => {
+  try {
+    const model = getGeminiModel(apiKey);
+    const history = historyTitles.slice(0, 20).join(", ");
+    
+    const prompt = `You are a movie discovery engine. Generate a list of 15 diverse and exciting movie titles.
+    ${history ? `The user's taste includes: ${history}. 
+    Mix 7 recommendations based on their taste with 8 completely random but highly-rated 'discovery' films from different genres and eras.` : `Generate 15 diverse, highly-rated, and exciting movie recommendations from different genres, countries, and eras.`}
+    
+    Return ONLY a JSON array of strings.
+    Example: ["Parasite", "The Godfather", "Spirited Away"]`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const titles: string[] = JSON.parse(text.match(/\[.*\]/s)?.[0] || "[]");
+
+    const moviePromises = titles.map(async (title) => {
+      const response = await fetch(
+        `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}`
+      );
+      const data = await response.json();
+      return data.results?.[0] as Movie | undefined;
+    });
+
+    const movies = await Promise.all(moviePromises);
+    return movies.filter((m): m is Movie => !!m);
+  } catch (error) {
+    console.error("Discovery failed:", error);
+    // Fallback to trending if AI fails
+    return getTrendingMovies();
+  }
+};
+
 export const generateMoodsAI = async (apiKey: string, historyTitles: string[] = []): Promise<string[]> => {
   try {
     const model = getGeminiModel(apiKey);

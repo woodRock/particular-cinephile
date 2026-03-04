@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Search, Film, Loader2, X, Plus, Check, Eye, Sparkles, Key, LogOut } from "lucide-react";
+import { Search, Film, Loader2, X, Plus, Check, Eye, Sparkles, Key, LogOut, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import type { Movie, MovieDetails } from "./api";
-import { getTrendingMovies, searchMoviesSemantic, getMovieDetails, generateMoodsAI } from "./api";
+import { getDiscoveryMovies, searchMoviesSemantic, getMovieDetails, generateMoodsAI } from "./api";
 import { useLibraryStore } from "./store";
 import "./App.css";
 
@@ -305,9 +305,9 @@ function App() {
   useEffect(() => {
     if (geminiApiKey) {
       generateDynamicMoods();
-    }
-    if (activeTab === 'discover' && query === "") {
-      loadTrending();
+      if (activeTab === 'discover' && query === "") {
+        loadDiscovery();
+      }
     }
   }, [geminiApiKey]);
 
@@ -326,10 +326,12 @@ function App() {
     setIsGeneratingMoods(false);
   };
 
-  const loadTrending = async () => {
+  const loadDiscovery = async () => {
+    if (!geminiApiKey) return;
     setIsLoading(true);
-    const trending = await getTrendingMovies();
-    setMovies(trending);
+    const historyTitles = [...seenList, ...watchlist].map(m => m.title);
+    const discovery = await getDiscoveryMovies(geminiApiKey, historyTitles);
+    setMovies(discovery);
     setIsLoading(false);
   };
 
@@ -444,6 +446,18 @@ function App() {
               >
                 {isGeneratingMoods ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />}
               </button>
+              
+              {activeTab === 'discover' && query === "" && (
+                <button 
+                  className="mood-chip" 
+                  style={{ borderStyle: 'dashed', opacity: 0.5 }}
+                  onClick={loadDiscovery}
+                  disabled={isLoading}
+                  title="Randomize Homepage"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+                </button>
+              )}
             </motion.div>
           </>
         )}
